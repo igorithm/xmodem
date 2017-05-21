@@ -1190,9 +1190,6 @@ TEST_F(XModemTests, XMODEM_TRANSMIT_WRITE_2_BLOCK_DOCUMENT)
 
 }
 
-
-
-
 TEST_F(XModemTests, XMODEM_RECEIVE_SUCCESS_READ_BLOCK)
 {
   xmodem_receive_set_callback_write(&receiver_write_data);
@@ -1206,9 +1203,29 @@ TEST_F(XModemTests, XMODEM_RECEIVE_SUCCESS_READ_BLOCK)
   EXPECT_EQ(true, xmodem_receive_process(0));
   EXPECT_EQ(XMODEM_RECEIVE_SEND_C, xmodem_receive_state());
 
+  EXPECT_EQ(true, xmodem_receive_process(1));
+  EXPECT_EQ(XMODEM_RECEIVE_WAIT_FOR_ACK, xmodem_receive_state());
+  
   receiver_returned_inbound_size = 1; 
   receiver_outbound_buffer[0] = C;
+  
+  /* setup mock receive buffer */
+  receiver_inbound_empty = false; 
+  //receiver_result_inbound_buffer = true;
+  receiver_returned_inbound_size = 1;
+  receiver_inbound_buffer[0]     = ACK;
 
+  EXPECT_EQ(true, xmodem_receive_process(2));
+  EXPECT_EQ(XMODEM_RECEIVE_ACK_SUCCESS, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(3));
+  EXPECT_EQ(XMODEM_RECEIVE_READ_BLOCK, xmodem_receive_state());
+  
+  receiver_returned_inbound_size = 133;
+
+  EXPECT_EQ(true, xmodem_receive_process(4));
+  EXPECT_EQ(XMODEM_RECEIVE_READ_BLOCK_SUCCESS, xmodem_receive_state());
+  
 #if 0
   // check that a SOH control character is sent to the receiver
   returned_outbound_size = 1;
@@ -1251,6 +1268,158 @@ TEST_F(XModemTests, XMODEM_RECEIVE_SUCCESS_READ_BLOCK)
 
 }
 
+TEST_F(XModemTests, XMODEM_RECEIVE_BLOCK_ACK)
+{
+  xmodem_receive_set_callback_write(&receiver_write_data);
+  xmodem_receive_set_callback_read(&receiver_read_data);
+  xmodem_receive_set_callback_is_outbound_full(&receiver_is_outbound_full);
+  xmodem_receive_set_callback_is_inbound_empty(&receiver_is_inbound_empty);
+
+  EXPECT_EQ(true, xmodem_receive_init());
+  EXPECT_EQ(XMODEM_RECEIVE_INITIAL, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(0));
+  EXPECT_EQ(XMODEM_RECEIVE_SEND_C, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(1));
+  EXPECT_EQ(XMODEM_RECEIVE_WAIT_FOR_ACK, xmodem_receive_state());
+  
+  receiver_returned_inbound_size = 1; 
+  receiver_outbound_buffer[0] = C;
+  
+  /* setup mock receive buffer */
+  receiver_inbound_empty = false; 
+  //receiver_result_inbound_buffer = true;
+  receiver_returned_inbound_size = 1;
+  receiver_inbound_buffer[0]     = ACK;
+
+  EXPECT_EQ(true, xmodem_receive_process(2));
+  EXPECT_EQ(XMODEM_RECEIVE_ACK_SUCCESS, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(3));
+  EXPECT_EQ(XMODEM_RECEIVE_READ_BLOCK, xmodem_receive_state());
+  
+  receiver_returned_inbound_size = sizeof(xmodem_packet_t);
+
+  xmodem_packet_t *packet = (xmodem_packet_t *)receiver_inbound_buffer;
+  xmodem_calculate_crc(packet->data, XMODEM_BLOCK_SIZE, &packet->crc);
+  
+  EXPECT_EQ(true, xmodem_receive_process(4));
+  EXPECT_EQ(XMODEM_RECEIVE_READ_BLOCK_SUCCESS, xmodem_receive_state());
+  
+  //test VALID, ACK, and WAIT_FOR_ACK states which just follow each other
+  EXPECT_EQ(true, xmodem_receive_process(5));
+  EXPECT_EQ(XMODEM_RECEIVE_BLOCK_VALID, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(6));
+  EXPECT_EQ(XMODEM_RECEIVE_BLOCK_ACK, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(7));
+  EXPECT_EQ(XMODEM_RECEIVE_WAIT_FOR_ACK, xmodem_receive_state());
+  
+  EXPECT_EQ(true, xmodem_receive_cleanup());
+}
+
+TEST_F(XModemTests, XMODEM_RECEIVE_BLOCK_INVALID)
+{
+  xmodem_receive_set_callback_write(&receiver_write_data);
+  xmodem_receive_set_callback_read(&receiver_read_data);
+  xmodem_receive_set_callback_is_outbound_full(&receiver_is_outbound_full);
+  xmodem_receive_set_callback_is_inbound_empty(&receiver_is_inbound_empty);
+
+  EXPECT_EQ(true, xmodem_receive_init());
+  EXPECT_EQ(XMODEM_RECEIVE_INITIAL, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(0));
+  EXPECT_EQ(XMODEM_RECEIVE_SEND_C, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(1));
+  EXPECT_EQ(XMODEM_RECEIVE_WAIT_FOR_ACK, xmodem_receive_state());
+  
+  receiver_returned_inbound_size = 1; 
+  receiver_outbound_buffer[0] = C;
+  
+  /* setup mock receive buffer */
+  receiver_inbound_empty = false; 
+  //receiver_result_inbound_buffer = true;
+  receiver_returned_inbound_size = 1;
+  receiver_inbound_buffer[0]     = ACK;
+
+  EXPECT_EQ(true, xmodem_receive_process(2));
+  EXPECT_EQ(XMODEM_RECEIVE_ACK_SUCCESS, xmodem_receive_state());
+  
+  receiver_returned_inbound_size = sizeof(xmodem_packet_t);
+
+  //bad CRC
+  xmodem_packet_t *packet = (xmodem_packet_t *)receiver_inbound_buffer;
+  packet->crc = 0xbaad;
+  
+  uint32_t timestamp;
+  for (timestamp = 3; timestamp <= 3 + 5*3; timestamp++)
+  {
+    
+    EXPECT_EQ(true, xmodem_receive_process(timestamp++));
+    EXPECT_EQ(XMODEM_RECEIVE_READ_BLOCK, xmodem_receive_state());
+  
+    EXPECT_EQ(true, xmodem_receive_process(timestamp++));
+    EXPECT_EQ(XMODEM_RECEIVE_READ_BLOCK_SUCCESS, xmodem_receive_state());
+    
+    EXPECT_EQ(true, xmodem_receive_process(timestamp));
+    EXPECT_EQ(XMODEM_RECEIVE_BLOCK_INVALID, xmodem_receive_state());
+    
+  }
+  
+  EXPECT_EQ(true, xmodem_receive_process(timestamp));
+  EXPECT_EQ(XMODEM_RECEIVE_ABORT_TRANSFER, xmodem_receive_state());
+  
+  EXPECT_EQ(true, xmodem_receive_cleanup());
+}
+
+TEST_F(XModemTests, XMODEM_RECEIVE_TRANSFER_COMPLETE)
+{
+  xmodem_receive_set_callback_write(&receiver_write_data);
+  xmodem_receive_set_callback_read(&receiver_read_data);
+  xmodem_receive_set_callback_is_outbound_full(&receiver_is_outbound_full);
+  xmodem_receive_set_callback_is_inbound_empty(&receiver_is_inbound_empty);
+
+  EXPECT_EQ(true, xmodem_receive_init());
+  EXPECT_EQ(XMODEM_RECEIVE_INITIAL, xmodem_receive_state());
+
+  //TODO: Implement unit tests here
+
+  receiver_returned_inbound_size = 1; 
+  receiver_outbound_buffer[0] = C;
+
+  receiver_inbound_empty = true; 
+  //receiver_result_inbound_buffer = false;
+  
+#if 0 
+  // check that a SOH control character is sent to the receiver
+  receiver_returned_outbound_size = 1;
+  receiver_outbound_full = false;
+  receiver_tmp = 0;//SOH;
+    
+  printf("***************receiver_inbound_buffer=%d\n", *receiver_inbound_buffer);
+  EXPECT_EQ(0, memcmp(receiver_inbound_buffer, &receiver_tmp, 1));
+#endif
+
+  EXPECT_EQ(true, xmodem_receive_process(1));
+  EXPECT_EQ(XMODEM_RECEIVE_SEND_C, xmodem_receive_state());
+
+  EXPECT_EQ(true, xmodem_receive_process(2));
+  EXPECT_EQ(XMODEM_RECEIVE_WAIT_FOR_ACK, xmodem_receive_state());
+
+  receiver_inbound_empty = false; 
+  //receiver_result_inbound_buffer = true;
+  receiver_returned_inbound_size = 1;
+  receiver_inbound_buffer[0]     = EOT;
+  
+  EXPECT_EQ(true, xmodem_receive_process(3));
+  EXPECT_EQ(XMODEM_RECEIVE_TRANSFER_COMPLETE, xmodem_receive_state());
+  
+  EXPECT_EQ(true, xmodem_receive_cleanup());
+}
+
 TEST_F(XModemTests, XMODEM_RECEIVE_ABORT_TRANSFER)
 {
   xmodem_receive_set_callback_write(&receiver_write_data);
@@ -1265,6 +1434,39 @@ TEST_F(XModemTests, XMODEM_RECEIVE_ABORT_TRANSFER)
 
   //TODO: Implement unit tests here
 
+  receiver_returned_inbound_size = 1; 
+  receiver_outbound_buffer[0] = C;
+
+  receiver_inbound_empty = true; 
+  //receiver_result_inbound_buffer = false;
+  
+#if 0 
+  // check that a SOH control character is sent to the receiver
+  receiver_returned_outbound_size = 1;
+  receiver_outbound_full = false;
+  receiver_tmp = 0;//SOH;
+    
+  printf("***************receiver_inbound_buffer=%d\n", *receiver_inbound_buffer);
+  EXPECT_EQ(0, memcmp(receiver_inbound_buffer, &receiver_tmp, 1));
+#endif
+
+  for (timestamp = 0; timestamp <= 5 * 3003; timestamp++)
+  {
+  
+    EXPECT_EQ(true, xmodem_receive_process(timestamp++));
+    EXPECT_EQ(XMODEM_RECEIVE_SEND_C, xmodem_receive_state());
+
+    EXPECT_EQ(true, xmodem_receive_process(timestamp++));
+    EXPECT_EQ(XMODEM_RECEIVE_WAIT_FOR_ACK, xmodem_receive_state());
+
+    EXPECT_EQ(true, xmodem_receive_process(timestamp += 3000));
+    EXPECT_EQ(XMODEM_RECEIVE_TIMEOUT_ACK, xmodem_receive_state());
+  
+  }
+  
+  EXPECT_EQ(true, xmodem_receive_process(timestamp));
+  EXPECT_EQ(XMODEM_RECEIVE_ABORT_TRANSFER, xmodem_receive_state());
+  
   EXPECT_EQ(true, xmodem_receive_cleanup());
 }
 

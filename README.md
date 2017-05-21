@@ -43,7 +43,7 @@ Get Code
 ```bash
 mkdir xmodem
 cd xmodem
-repo init -m xmodem.xml -u git://github.com/caseykelso/xmodem.git
+repo init -m xmodem.xml -u git://github.com/igorithm/xmodem.git
 repo sync
 ```
 
